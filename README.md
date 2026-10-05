@@ -2,7 +2,7 @@
 
 An interactive replica of the historical Mexican Army cipher disk, running entirely in your browser.
 
-**Live version:** https://carpediem-tools.github.io/cipher-disk/
+**Live version:** https://carpediem-tools.github.io/mexican-army-cypher-disk/
 
 ## Features
 
