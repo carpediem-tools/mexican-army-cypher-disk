@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mexican Army Cipher Disk</title>
+<style>
+  :root{
+    --bg:#12141a; --panel:#1b1e26; --ink:#e8e6df; --muted:#9aa0ad; --line:#2c313c;
+    --c0:#ffe14d; --c1:#5fe8c0; --c2:#ff7ad0; --c3:#ff7a7a; --c4:#d5d7db;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.45 ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px;display:grid;
+        grid-template-columns:minmax(320px,1fr) 380px;gap:22px;align-items:start}
+  @media (max-width:960px){.wrap{grid-template-columns:1fr}}
+  h1{font-size:19px;margin:0 0 2px;font-weight:650;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .panel + .panel{margin-top:14px}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+            margin:0 0 10px;font-weight:600}
+  button{background:#262b36;color:var(--ink);border:1px solid var(--line);border-radius:8px;
+         padding:7px 12px;font-size:13px;cursor:pointer}
+  button:hover{background:#303743}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  label.chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer}
+  svg{width:100%;height:auto;display:block;touch-action:none;user-select:none;cursor:grab}
+  svg.dragging{cursor:grabbing}
+  .cell{stroke:#111;stroke-width:1.2}
+  .lbl{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-weight:700;
+       fill:#101216;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+  g.ring:hover .cell{filter:brightness(1.08)}
+  table{border-collapse:collapse;width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  th,td{border:1px solid var(--line);padding:3px 2px;text-align:center}
+  th{color:#101216;font-weight:700}
+  textarea{width:100%;background:#101319;color:var(--ink);border:1px solid var(--line);
+           border-radius:8px;padding:8px;font-family:ui-monospace,Menlo,Consolas,monospace;
+           font-size:13px;resize:vertical}
+  .key{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:var(--muted)}
+  .key b{color:var(--ink)}
+  .hint{color:var(--muted);font-size:12px;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div>
+    <h1>Mexican Army Cipher Disk</h1>
+    <p class="sub">Grab any ring and rotate it with the mouse (or your finger). Each disk turns independently.</p>
+    <div class="panel">
+      <svg id="wheel" viewBox="0 0 820 820" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h2>Controls</h2>
+      <div class="row">
+        <button id="reset">Realign all</button>
+        <button id="rand">Random key</button>
+        <label class="chk"><input type="checkbox" id="snap" checked> snap to notches</label>
+      </div>
+      <div class="key" id="keyout" style="margin-top:10px"></div>
+      <div class="hint">The key = offset of each numbered disk relative to the letter disk.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Current equivalence table</h2>
+      <div style="overflow-x:auto"><table id="tbl"></table></div>
+    </div>
+
+    <div class="panel">
+      <h2>Encrypt</h2>
+      <textarea id="plain" rows="3" placeholder="Plaintext…">ATTACK AT DAWN</textarea>
+      <div class="row" style="margin-top:8px"><button id="enc">Encrypt →</button></div>
+      <textarea id="cipher" rows="3" placeholder="Numbers…" style="margin-top:8px"></textarea>
+      <div class="row" style="margin-top:8px"><button id="dec">← Decrypt</button></div>
+      <div class="hint">Homophonic cipher: each letter randomly picks one of its 3 or 4 numbers.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const CX=410, CY=410, N=26, STEP=360/N;
+  const ALPHA="ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+
+  // Disk 4: 79 → 99 then 00, and 4 empty cells (cf. historical model)
+  function nums(start){
+    const out=[];
+    for(let i=0;i<N;i++){
+      const v=start+i;
+      out.push(v>100 ? null : String(v%100).padStart(2,"0"));
+    }
+    return out;
+  }
+
+  const RINGS=[
+    {r0:322,r1:392,fill:"var(--c0)",vals:ALPHA,       fs:34},
+    {r0:266,r1:322,fill:"var(--c1)",vals:nums(1),     fs:25},
+    {r0:210,r1:266,fill:"var(--c2)",vals:nums(27),    fs:25},
+    {r0:154,r1:210,fill:"var(--c3)",vals:nums(53),    fs:25},
+    {r0: 96,r1:154,fill:"var(--c4)",vals:nums(79),    fs:25}
+  ];
+  const rot=[0,0,0,0,0];
+
+  const svg=document.getElementById("wheel");
+  const NS="http://www.w3.org/2000/svg";
+  const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const pt=(r,a)=>{const t=(a-90)*Math.PI/180;return [CX+r*Math.cos(t), CY+r*Math.sin(t)];};
+
+  function sector(r0,r1,a0,a1){
+    const [x1,y1]=pt(r1,a0),[x2,y2]=pt(r1,a1),[x3,y3]=pt(r0,a1),[x4,y4]=pt(r0,a0);
+    return `M${x1} ${y1}A${r1} ${r1} 0 0 1 ${x2} ${y2}L${x3} ${y3}A${r0} ${r0} 0 0 0 ${x4} ${y4}Z`;
+  }
+
+  const groups=[];
+  // hub
+  svg.appendChild(el("circle",{cx:CX,cy:CY,r:96,fill:"#f4f4f0",stroke:"#111","stroke-width":1.5}));
+
+  RINGS.forEach((ring,ri)=>{
+    const g=el("g",{class:"ring","data-ring":ri});
+    ring.vals.forEach((v,i)=>{
+      const a0=i*STEP-STEP/2, a1=a0+STEP;
+      g.appendChild(el("path",{class:"cell",d:sector(ring.r0,ring.r1,a0,a1),
+                               fill: v===null ? "#8e939c" : ring.fill}));
+      if(v!==null){
+        const rm=(ring.r0+ring.r1)/2, [x,y]=pt(rm,i*STEP);
+        const t=el("text",{class:"lbl",x,y,"font-size":ring.fs,transform:`rotate(${i*STEP} ${x} ${y})`});
+        t.textContent=v;
+        g.appendChild(t);
+      }
+    });
+    svg.appendChild(g);
+    groups.push(g);
+  });
+  svg.appendChild(el("circle",{cx:CX,cy:CY,r:5,fill:"#111"}));
+
+  function apply(){
+    groups.forEach((g,i)=>g.setAttribute("transform",`rotate(${rot[i]} ${CX} ${CY})`));
+    refresh();
+  }
+
+  // ---- interaction ----
+  let drag=null;
+  function local(e){
+    const r=svg.getBoundingClientRect(), vb=svg.viewBox.baseVal;
+    return {x:(e.clientX-r.left)/r.width*vb.width, y:(e.clientY-r.top)/r.height*vb.height};
+  }
+  const angleOf=p=>Math.atan2(p.x-CX, CY-p.y)*180/Math.PI;
+
+  svg.addEventListener("pointerdown",e=>{
+    const p=local(e), d=Math.hypot(p.x-CX,p.y-CY);
+    const ri=RINGS.findIndex(r=>d>=r.r0&&d<=r.r1);
+    if(ri<0) return;
+    drag={ri, a0:angleOf(p), start:rot[ri]};
+    svg.setPointerCapture(e.pointerId);
+    svg.classList.add("dragging");
+  });
+  svg.addEventListener("pointermove",e=>{
+    if(!drag) return;
+    let d=angleOf(local(e))-drag.a0;
+    if(d>180)d-=360; if(d<-180)d+=360;
+    rot[drag.ri]=drag.start+d;
+    apply();
+  });
+  function end(){
+    if(!drag) return;
+    if(document.getElementById("snap").checked)
+      rot[drag.ri]=Math.round(rot[drag.ri]/STEP)*STEP;
+    drag=null; svg.classList.remove("dragging"); apply();
+  }
+  svg.addEventListener("pointerup",end);
+  svg.addEventListener("pointercancel",end);
+
+  // ---- key & table ----
+  const mod=(n,m)=>((n%m)+m)%m;
+  const offset=k=>mod(Math.round((rot[k]-rot[0])/STEP),N);
+
+  // letter of index i ↔ cell j of disk k
+  const cellFor=(k,i)=>mod(i-offset(k),N);
+
+  function refresh(){
+    document.getElementById("keyout").innerHTML =
+      "Key: " + [1,2,3,4].map(k=>`D${k}=<b>${offset(k)}</b>`).join(" · ");
+    const tbl=document.getElementById("tbl");
+    let head="<tr><th style='background:var(--c0)'>L</th>";
+    for(let i=0;i<N;i++) head+=`<th style='background:var(--c0)'>${ALPHA[i]}</th>`;
+    head+="</tr>";
+    let body="";
+    for(let k=1;k<=4;k++){
+      body+=`<tr><th style='background:var(--c${k})'>D${k}</th>`;
+      for(let i=0;i<N;i++){
+        const v=RINGS[k].vals[cellFor(k,i)];
+        body+=`<td>${v===null?"·":v}</td>`;
+      }
+      body+="</tr>";
+    }
+    tbl.innerHTML=head+body;
+  }
+
+  // ---- encryption ----
+  function encode(txt){
+    const out=[];
+    for(const ch of txt.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")){
+      const i=ALPHA.indexOf(ch);
+      if(i<0) continue;
+      const opts=[1,2,3,4].map(k=>RINGS[k].vals[cellFor(k,i)]).filter(v=>v!==null);
+      out.push(opts[Math.floor(Math.random()*opts.length)]);
+    }
+    return out.join(" ");
+  }
+  function decode(txt){
+    const toks=txt.match(/\d{2}/g)||[];
+    return toks.map(t=>{
+      for(let k=1;k<=4;k++){
+        const j=RINGS[k].vals.indexOf(t);
+        if(j>=0) return ALPHA[mod(j+offset(k),N)];
+      }
+      return "?";
+    }).join("");
+  }
+
+  document.getElementById("reset").onclick=()=>{rot.fill(0);apply();};
+  document.getElementById("rand").onclick=()=>{
+    rot[0]=0;
+    for(let k=1;k<5;k++) rot[k]=Math.floor(Math.random()*N)*STEP;
+    apply();
+  };
+  document.getElementById("snap").onchange=()=>{
+    if(document.getElementById("snap").checked){
+      for(let k=0;k<5;k++) rot[k]=Math.round(rot[k]/STEP)*STEP;
+      apply();
+    }
+  };
+  document.getElementById("enc").onclick=()=>{
+    document.getElementById("cipher").value=encode(document.getElementById("plain").value);
+  };
+  document.getElementById("dec").onclick=()=>{
+    document.getElementById("plain").value=decode(document.getElementById("cipher").value);
+  };
+
+  apply();
+})();
+</script>
+</body>
+</html>
